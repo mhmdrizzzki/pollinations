@@ -97,6 +97,23 @@ describe("forwarded request client-IP resolution", () => {
             "x-original-client-ip": "9.9.9.9",
             "cf-connecting-ip": "2a01:4f8:1c17::1",
         });
-        expect(getRealClientIp(ipv6Direct)).toBe("2a01:4f8:1c17::1");
+
+        // Regression: the trusted egress spaces are 64.252.64.0/18 and
+        // 130.176.0.0/17 — not the whole /16. Addresses just outside the
+        // documented ranges must NOT be treated as edge egress, or a caller
+        // on e.g. 64.252.128.0/17 could still spoof X-Original-Client-IP.
+        for (const ip of ["64.252.128.1", "130.176.128.1", "10.0.0.1"]) {
+            const outsideEgress = mockContext("https://gen.myceli.ai/text/hi", {
+                "x-forwarded-host": "gen.pollinations.ai",
+                "x-original-client-ip": "9.9.9.9",
+                "cf-connecting-ip": ip,
+            });
+            expect(getRealClientIp(outsideEgress)).toBe(ip);
+        }
+        expect(getRealClientIp(mockContext("https://gen.myceli.ai/text/hi", {
+            "x-forwarded-host": "gen.pollinations.ai",
+            "x-original-client-ip": "9.9.9.9",
+            "cf-connecting-ip": "64.252.127.255", // still inside the /18
+        }))).toBe("9.9.9.9");
     });
 });
